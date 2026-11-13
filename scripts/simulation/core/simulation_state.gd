@@ -1,40 +1,40 @@
-class_name SimulationState
 extends RefCounted
-## Runtime state for one outpost simulation.
-## Resource quantities are stored by StringName keys in `resources`.
+class_name OutpostSimulationState
 
-var resources: Dictionary = {
-    &"water": 100.0,
-    &"oxygen": 100.0,
-    &"suit_oxygen": 20.0,
-    &"battery_energy": 100.0,
-    &"food_lettuce": 0.0,
-    &"food_radish": 0.0,
-    &"food_potato": 0.0,
-    &"food_soy": 0.0,
-    &"food_tomato": 0.0,
-    &"seed_lettuce": 3.0,
-    &"seed_radish": 3.0,
-    &"seed_potato": 3.0,
-    &"seed_soy": 3.0,
-    &"seed_tomato": 3.0,
+var elapsed_hours: float = 0.0
+var day: int = 1
+var hour_of_day: float = 0.0
+var campaign_days: int = 90
+var resources: Dictionary = {}
+var crops: Array[Dictionary] = []
+var crew := {
+    "fitness": 75.0,
+    "happiness": 75.0,
+    "health": 100.0,
+    "radiation_dose_msv": 0.0,
+    "crew_count": 4
 }
+var power := {
+    "solar_condition": 1.0,
+    "dust_level": 0.0,
+    "storm_days_remaining": 0,
+    "power_generated_today_kwh": 0.0,
+    "power_used_today_kwh": 0.0
+}
+var status: String = "operational"
+var warnings: Array[String] = []
+var history: Array[Dictionary] = []
 
-var fitness: float = 75.0
-var happiness: float = 75.0
-var accumulated_radiation_dose: float = 0.0
-var crops: Array[CropInstance] = []
-
-
-func make_snapshot() -> Dictionary:
-    var crop_snapshots: Array[Dictionary] = []
-    for crop in crops:
-        crop_snapshots.append(crop.make_snapshot())
-
+func snapshot() -> Dictionary:
     return {
+        "elapsed_hours": elapsed_hours,
+        "day": day,
+        "hour_of_day": hour_of_day,
+        "campaign_days": campaign_days,
         "resources": resources.duplicate(true),
-        "fitness": fitness,
-        "happiness": happiness,
-        "accumulated_radiation_dose": accumulated_radiation_dose,
-        "crops": crop_snapshots,
+        "crops": crops.duplicate(true),
+        "crew": crew.duplicate(true),
+        "power": power.duplicate(true),
+        "status": status,
+        "warnings": warnings.duplicate()
     }

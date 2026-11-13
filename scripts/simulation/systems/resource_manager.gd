@@ -1,74 +1,55 @@
-class_name ResourceManager
 extends RefCounted
-## The only API systems should use to change shared resource quantities.
+class_name OutpostResourceManager
 
-signal resource_changed(resource_id: StringName, new_amount: float)
+signal resource_changed(resource_id: String, new_amount: float, delta: float)
+signal shortage(resource_id: String, requested: float, available: float)
 
-var _state: SimulationState
+var state: OutpostSimulationState
 
+func setup(sim_state: OutpostSimulationState) -> void:
+    state = sim_state
 
-func setup(simulation_state: SimulationState) -> void:
-    _state = simulation_state
+func amount(resource_id: String) -> float:
+    return float(state.resources.get(resource_id, 0.0))
 
+func can_consume(resource_id: String, quantity: float) -> bool:
+    return quantity >= 0.0 and amount(resource_id) + 0.000001 >= quantity
 
-func get_amount(resource_id: StringName) -> float:
-    if _state == null:
+func consume(resource_id: String, quantity: float) -> bool:
+    if quantity <= 0.0:
+        return true
+    var available := amount(resource_id)
+    if available + 0.000001 < quantity:
+        shortage.emit(resource_id, quantity, available)
+        return false
+    _set_amount(resource_id, available - quantity)
+    return true
+
+func produce(resource_id: String, quantity: float, cap: float = -1.0) -> float:
+    if quantity <= 0.0:
         return 0.0
-    return float(_state.resources.get(resource_id, 0.0))
+    var old := amount(resource_id)
+    var new_value := old + quantity
+    if cap >= 0.0:
+        new_value = minf(new_value, cap)
+    _set_amount(resource_id, new_value)
+    return new_value - old
 
-
-func can_consume(resource_id: StringName, amount: float) -> bool:
-    if amount < 0.0:
-        return false
-    return get_amount(resource_id) + 0.000001 >= amount
-
-
-func consume(resource_id: StringName, amount: float) -> bool:
-    if amount < 0.0 or not can_consume(resource_id, amount):
-        return false
-
-    var new_amount := maxf(0.0, get_amount(resource_id) - amount)
-    _state.resources[resource_id] = new_amount
-    resource_changed.emit(resource_id, new_amount)
-    return true
-
-
-func produce(
-    resource_id: StringName,
-    amount: float,
-    capacity: float = -1.0
-) -> void:
-    if _state == null or amount <= 0.0:
-        return
-
-    var new_amount := get_amount(resource_id) + amount
-    if capacity >= 0.0:
-        new_amount = minf(new_amount, capacity)
-
-    _state.resources[resource_id] = new_amount
-    resource_changed.emit(resource_id, new_amount)
-
-
-## All-or-nothing transaction: either every cost is paid or none are.
 func consume_many(costs: Dictionary) -> bool:
-    for resource_id in costs:
-        if not can_consume(StringName(resource_id), float(costs[resource_id])):
+    for key in costs:
+        if not can_consume(str(key), float(costs[key])):
+            shortage.emit(str(key), float(costs[key]), amount(str(key)))
             return false
-
-    for resource_id in costs:
-        consume(StringName(resource_id), float(costs[resource_id]))
-
+    for key in costs:
+        consume(str(key), float(costs[key]))
     return true
 
+func set_amount(resource_id: String, value: float) -> void:
+    _set_amount(resource_id, maxf(0.0, value))
 
-func produce_many(outputs: Dictionary) -> void:
-    for resource_id in outputs:
-        produce(StringName(resource_id), float(outputs[resource_id]))
-
-
-func set_amount(resource_id: StringName, amount: float) -> void:
-    if _state == null:
-        return
-    var safe_amount := maxf(0.0, amount)
-    _state.resources[resource_id] = safe_amount
-    resource_changed.emit(resource_id, safe_amount)
+func _set_amount(resource_id: String, value: float) -> void:
+    var old := amount(resource_id)
+    state.resources[resource_id] = maxf(0.0, value)
+    var actual := float(state.resources[resource_id])
+    if not is_equal_approx(old, actual):
+        resource_changed.emit(resource_id, actual, actual - old)

@@ -1,59 +1,37 @@
-class_name HealthSystem
 extends RefCounted
+class_name OutpostHealthSystem
 
-var _resources: ResourceManager
-var _state: SimulationState
-var _config: SimulationConfig
+signal crew_status_changed(crew: Dictionary)
+var state: OutpostSimulationState
+var resources: OutpostResourceManager
+var config: OutpostSimulationConfig
 
+func setup(sim_state: OutpostSimulationState, resource_manager: OutpostResourceManager, cfg: OutpostSimulationConfig) -> void:
+    state = sim_state
+    resources = resource_manager
+    config = cfg
 
-func setup(
-    resource_manager: ResourceManager,
-    simulation_state: SimulationState,
-    config: SimulationConfig
-) -> void:
-    _resources = resource_manager
-    _state = simulation_state
-    _config = config
+func advance_day() -> void:
+    state.crew.fitness = maxf(0.0, float(state.crew.fitness) - config.daily_fitness_decay)
+    state.crew.happiness = maxf(0.0, float(state.crew.happiness) - config.daily_happiness_decay)
+    if float(state.crew.radiation_dose_msv) > config.radiation_warning_msv:
+        state.crew.happiness = maxf(0.0, float(state.crew.happiness) - 0.5)
+    if float(state.crew.health) < 50.0:
+        state.crew.fitness = maxf(0.0, float(state.crew.fitness) - 1.0)
+    crew_status_changed.emit(state.crew.duplicate(true))
 
+func exercise_crew() -> Dictionary:
+    if float(state.crew.fitness) >= 100.0:
+        return {"ok": false, "reason": "Fitness is already at maximum"}
+    if not resources.consume("battery_kwh", config.exercise_power_kwh):
+        return {"ok": false, "reason": "Not enough stored power"}
+    state.crew.fitness = minf(100.0, float(state.crew.fitness) + config.exercise_fitness_gain)
+    state.crew.happiness = minf(100.0, float(state.crew.happiness) + config.exercise_happiness_gain)
+    crew_status_changed.emit(state.crew.duplicate(true))
+    return {"ok": true, "fitness": state.crew.fitness, "happiness": state.crew.happiness}
 
-func advance(hours: float) -> void:
-    _state.fitness = clampf(
-        _state.fitness - _config.fitness_decay_per_hour * hours,
-        0.0,
-        100.0
-    )
-    _state.happiness = clampf(
-        _state.happiness - _config.happiness_decay_per_hour * hours,
-        0.0,
-        100.0
-    )
-
-
-func exercise(duration_hours: float, fitness_gain_per_hour: float) -> bool:
-    if duration_hours <= 0.0 or fitness_gain_per_hour < 0.0:
-        return false
-
-    _state.fitness = clampf(
-        _state.fitness + duration_hours * fitness_gain_per_hour,
-        0.0,
-        100.0
-    )
-    return true
-
-
-func can_perform_activity(required_fitness: float) -> bool:
-    return _state.fitness >= required_fitness
-
-
-func eat_food(food_id: StringName, quantity: float, fitness_effect: float = 0.0) -> bool:
-    if quantity <= 0.0:
-        return false
-
-    var food_key := StringName("food_%s" % String(food_id))
-    if not _resources.consume(food_key, quantity):
-        return false
-
-    # Temporary prototype hook. Later, calculate this from nutrition data
-    # and cumulative diet rather than applying a direct instant fitness boost.
-    _state.fitness = clampf(_state.fitness + fitness_effect, 0.0, 100.0)
-    return true
+func perform_demanding_activity(fitness_cost: float = 4.0) -> Dictionary:
+    if float(state.crew.fitness) < 20.0:
+        return {"ok": false, "reason": "Crew fitness is too low for this activity"}
+    state.crew.fitness = maxf(0.0, float(state.crew.fitness) - fitness_cost)
+    return {"ok": true, "fitness": state.crew.fitness}
